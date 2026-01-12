@@ -1,0 +1,5 @@
+{
+  "name": "FastFlow - Smart Kitchen System",
+  "description": "A comprehensive fast food management ecosystem. Includes a mobile-first client ordering app, a real-time kitchen display system (KDS) for chefs, and an admin dashboard with automated financial analytics and AI-powered business insights.",
+  "requestFramePermissions": []
+}
