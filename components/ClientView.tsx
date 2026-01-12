@@ -7,6 +7,7 @@ import { ProductList } from './client/ProductList';
 import { ProductModal } from './client/ProductModal';
 import { CartModal } from './client/CartModal';
 import { CartButton } from './client/CartButton';
+import { CartItem } from '../types';
 
 export const ClientView: React.FC = () => {
   const { products, cart, addToCart, removeFromCart, placeOrder } = useApp();
@@ -31,14 +32,16 @@ export const ClientView: React.FC = () => {
     return result;
   }, [products, selectedCategory, searchQuery]);
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const cartTotal = cart.reduce((sum, item) => {
+    const modsPrice = item.modifiers?.reduce((mSum, mod) => mSum + mod.price, 0) || 0;
+    return sum + ((item.price + modsPrice) * item.quantity);
+  }, 0);
+  
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleAddToCart = (quantity: number) => {
-    if (!activeProduct) return;
-    for(let i = 0; i < quantity; i++) {
-        addToCart(activeProduct); 
-    }
+  // Handles adding item from Modal (fully configured)
+  const handleAddToCart = (item: CartItem) => {
+    addToCart(item);
     setActiveProduct(null);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 2000);
@@ -94,8 +97,8 @@ export const ClientView: React.FC = () => {
         <CartModal 
           cart={cart}
           onClose={() => setIsCartOpen(false)}
-          onAddToCart={addToCart}
-          onRemoveFromCart={removeFromCart}
+          onAddToCart={(item) => addToCart(item)} // Re-adding existing item
+          onRemoveFromCart={(id) => removeFromCart(id)} // using uniqueId
           onCheckout={handleCheckout}
         />
       )}

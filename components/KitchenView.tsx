@@ -2,50 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { 
   CheckCircle, Clock, Flame, AlertTriangle, RotateCcw, 
   Utensils, History, BellRing, Wifi, WifiOff, 
-  ChefHat, Zap, ArrowRight, XCircle
+  ChefHat, Zap, ArrowRight 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-
-// --- TYPES & INTERFACES ---
-
-export enum OrderStatus {
-  PENDING = 'PENDING',
-  COOKING = 'COOKING',
-  READY = 'READY',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED'
-}
-
-export type Modifier = {
-  id: string;
-  name: string;
-  price: number;
-  action: 'add' | 'remove' | 'substitute'; // distinct visual treatments
-};
-
-export type OrderItem = {
-  id: string;
-  name: string;
-  quantity: number;
-  modifiers?: Modifier[];
-  specialInstructions?: string;
-  completed?: boolean; // Local state tracking within the ticket
-  category: 'GRILL' | 'FRYER' | 'COLD' | 'DRINK'; // For routing logic
-};
-
-export type Order = {
-  id: string;
-  tableId?: string;
-  serverName?: string;
-  customerName?: string;
-  status: OrderStatus;
-  items: OrderItem[];
-  createdAt: string; // ISO string
-  priority: boolean; // VIP or delivery orders
-  allergies?: string[];
-};
+import { useApp } from '../context/AppContext';
+import { Order, OrderStatus, CartItem } from '../types';
 
 // --- UTILS ---
 
@@ -55,44 +18,6 @@ function cn(...inputs: ClassValue[]) {
 
 const CRITICAL_MINUTES = 15;
 const WARNING_MINUTES = 10;
-
-// Mock Data Provider for Preview (Remove in Production)
-const MOCK_ORDERS: Order[] = [
-  {
-    id: 'ORD-8821',
-    customerName: 'Alex V.',
-    status: OrderStatus.COOKING,
-    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(), // 12 mins ago (Warning)
-    priority: false,
-    items: [
-      { id: '1', name: 'Truffle Burger', quantity: 1, category: 'GRILL', modifiers: [{ id: 'm1', name: 'No Onions', price: 0, action: 'remove' }] },
-      { id: '2', name: 'Cajun Fries', quantity: 1, category: 'FRYER' }
-    ]
-  },
-  {
-    id: 'ORD-8824',
-    customerName: 'UberEats #442',
-    status: OrderStatus.PENDING,
-    createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    priority: true,
-    allergies: ['GLUTEN'],
-    items: [
-      { id: '3', name: 'Vegan Bowl', quantity: 2, category: 'COLD', specialInstructions: 'Dressing on side' },
-    ]
-  },
-  {
-    id: 'ORD-8819',
-    tableId: 'Table 4',
-    status: OrderStatus.COOKING,
-    createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(), // 18 mins ago (Critical)
-    priority: false,
-    items: [
-      { id: '4', name: 'Ribeye Steak', quantity: 1, category: 'GRILL', modifiers: [{ id: 'm2', name: 'Medium Rare', price: 0, action: 'add' }] },
-      { id: '5', name: 'Mashed Potato', quantity: 1, category: 'GRILL' },
-      { id: '6', name: 'Caesar Salad', quantity: 1, category: 'COLD' },
-    ]
-  }
-];
 
 // --- COMPONENT: AGGREGATED PRODUCTION ITEM ---
 const ProductionItem = memo(({ name, count, category }: { name: string, count: number, category: string }) => {
@@ -115,8 +40,8 @@ const ProductionItem = memo(({ name, count, category }: { name: string, count: n
 });
 
 // --- COMPONENT: TICKET ITEM ROW ---
-const TicketItem = memo(({ item, isTicketDone }: { item: OrderItem, isTicketDone: boolean }) => {
-  const [localDone, setLocalDone] = useState(item.completed || false);
+const TicketItem = memo(({ item, isTicketDone }: { item: CartItem, isTicketDone: boolean }) => {
+  const [localDone, setLocalDone] = useState(false);
 
   const toggleItem = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -164,10 +89,10 @@ const TicketItem = memo(({ item, isTicketDone }: { item: OrderItem, isTicketDone
             )}
             
             {/* Special Instructions */}
-            {item.specialInstructions && (
+            {item.comment && (
               <div className="mt-1 flex items-center gap-1 text-amber-400 text-xs font-bold bg-amber-900/20 px-1.5 py-0.5 rounded w-fit">
                 <AlertTriangle size={10} />
-                {item.specialInstructions.toUpperCase()}
+                {item.comment.toUpperCase()}
               </div>
             )}
           </div>
@@ -199,7 +124,7 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
 
   const cardStatusColor = useMemo(() => {
     if (order.status === OrderStatus.READY) return 'border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.15)]';
-    if (isCritical) return 'border-rose-600 shadow-[0_0_20px_rgba(225,29,72,0.2)] animate-pulse-slow'; // Custom slow pulse
+    if (isCritical) return 'border-rose-600 shadow-[0_0_20px_rgba(225,29,72,0.2)] animate-pulse-slow';
     if (isWarning) return 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.1)]';
     return 'border-slate-600';
   }, [order.status, isCritical, isWarning]);
@@ -231,7 +156,7 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
             )}
           </div>
           <span className="text-xs font-bold text-slate-400 truncate max-w-[140px]">
-            {order.tableId || order.customerName}
+            {order.tableNumber || order.customerName}
           </span>
         </div>
 
@@ -242,7 +167,6 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
            )}>
               {elapsedMinutes}m
            </div>
-           {/* Allergies Tag */}
            {order.allergies && (
              <span className="mt-1 flex items-center gap-1 text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-full uppercase">
                <AlertTriangle size={10} fill="white" />
@@ -262,7 +186,6 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
       {/* Footer / Bump Bar Area */}
       <div className="p-3 bg-slate-800/80 backdrop-blur border-t border-slate-700/50">
         <div className="grid grid-cols-4 gap-2">
-          {/* Recall Button */}
           <button 
             onClick={() => onAction(order.id, 'recall')}
             className="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg flex items-center justify-center transition-colors h-10 active:scale-95"
@@ -271,7 +194,6 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
             <RotateCcw size={18} />
           </button>
 
-          {/* Bump Button */}
           <button 
             onClick={() => onAction(order.id, 'bump')}
             className={cn(
@@ -296,64 +218,52 @@ const TicketCard = memo(({ order, currentTime, onAction }: {
 // --- MAIN LAYOUT COMPONENT ---
 
 export const KitchenView: React.FC = () => {
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
+  const { orders, updateOrderStatus } = useApp();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isConnected, setIsConnected] = useState(true);
 
-  // Clock Tick
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Keyboard Shortcuts (Bump Bar Simulation)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Mock logic: Spacebar bumps the oldest ticket
-      if (e.code === 'Space') {
-        const oldestOrder = [...orders].sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
-        if (oldestOrder) handleTicketAction(oldestOrder.id, 'bump');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [orders]);
-
   const handleTicketAction = useCallback((id: string, action: 'bump' | 'recall' | 'cancel') => {
-    setOrders(prev => {
-      return prev.map(o => {
-        if (o.id !== id) return o;
-        
-        if (action === 'bump') {
-          if (o.status === OrderStatus.PENDING) return { ...o, status: OrderStatus.COOKING };
-          if (o.status === OrderStatus.COOKING) return { ...o, status: OrderStatus.READY };
-          if (o.status === OrderStatus.READY) return { ...o, status: OrderStatus.COMPLETED }; // Will be filtered out
-        }
-        if (action === 'recall') {
-            const prevStatus = o.status === OrderStatus.READY ? OrderStatus.COOKING : OrderStatus.PENDING;
-            return { ...o, status: prevStatus };
-        }
-        return o;
-      }).filter(o => o.status !== OrderStatus.COMPLETED); // Remove completed from active view
-    });
-  }, []);
+    const order = orders.find(o => o.id === id);
+    if (!order) return;
+
+    if (action === 'bump') {
+      if (order.status === OrderStatus.PENDING) updateOrderStatus(id, OrderStatus.COOKING);
+      else if (order.status === OrderStatus.COOKING) updateOrderStatus(id, OrderStatus.READY);
+      else if (order.status === OrderStatus.READY) updateOrderStatus(id, OrderStatus.COMPLETED);
+    } else if (action === 'recall') {
+      const prevStatus = order.status === OrderStatus.READY ? OrderStatus.COOKING : OrderStatus.PENDING;
+      updateOrderStatus(id, prevStatus);
+    }
+  }, [orders, updateOrderStatus]);
 
   const activeOrders = useMemo(() => 
     orders.filter(o => o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED)
           .sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), 
   [orders]);
 
+  // Production Item Helper
+  const getCategory = (itemName: string, itemCat: string) => {
+    if (itemCat === 'Бургеры' || itemCat === 'Комбо') return 'GRILL';
+    if (itemCat === 'Снэки') return 'FRYER';
+    if (itemCat === 'Напитки') return 'DRINK';
+    return 'COLD';
+  };
+
   const productionAggregate = useMemo(() => {
     const counts: Record<string, { count: number, category: string }> = {};
     activeOrders.forEach(o => {
       if (o.status !== OrderStatus.READY) {
         o.items.forEach(item => {
-          if (!counts[item.name]) counts[item.name] = { count: 0, category: item.category };
+          if (!counts[item.name]) counts[item.name] = { count: 0, category: getCategory(item.name, item.category) };
           counts[item.name].count += item.quantity;
         });
       }
     });
-    // Sort: High quantity first, then Grill items
     return Object.entries(counts)
       .sort(([,a], [,b]) => b.count - a.count)
       .map(([name, data]) => ({ name, ...data }));
@@ -368,9 +278,8 @@ export const KitchenView: React.FC = () => {
   return (
     <div className="flex h-screen w-screen bg-[#0b1120] text-slate-100 font-sans overflow-hidden selection:bg-emerald-500/30">
       
-      {/* SIDEBAR: Global Stats & Production Stream */}
+      {/* SIDEBAR */}
       <aside className="w-80 bg-[#0f172a] border-r border-slate-800 flex flex-col z-20 shadow-2xl">
-        {/* Brand */}
         <div className="h-16 flex items-center px-6 border-b border-slate-800 gap-3">
           <div className="bg-gradient-to-tr from-emerald-500 to-teal-400 p-2 rounded-lg shadow-lg shadow-emerald-500/20">
             <Utensils className="text-white" size={20} />
@@ -378,7 +287,6 @@ export const KitchenView: React.FC = () => {
           <span className="font-black tracking-wider text-lg text-white">CHEF<span className="text-emerald-400">OS</span></span>
         </div>
 
-        {/* Macro Stats */}
         <div className="grid grid-cols-3 border-b border-slate-800 divide-x divide-slate-800 bg-slate-900/50">
            <div className="py-4 flex flex-col items-center">
              <span className="text-2xl font-black text-amber-500 leading-none">{stats.pending}</span>
@@ -395,7 +303,6 @@ export const KitchenView: React.FC = () => {
            </div>
         </div>
 
-        {/* Smart Aggregator */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="p-4 pb-2">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -418,7 +325,6 @@ export const KitchenView: React.FC = () => {
           </div>
         </div>
 
-        {/* System Status Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-900 text-[10px] text-slate-500 flex justify-between items-center">
            <div className="flex items-center gap-2">
              {isConnected ? <Wifi size={14} className="text-emerald-500" /> : <WifiOff size={14} className="text-rose-500" />}
@@ -430,11 +336,9 @@ export const KitchenView: React.FC = () => {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Top Header */}
         <header className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50 bg-[#0b1120]/90 backdrop-blur z-10">
           <div className="flex items-center gap-6">
              <h2 className="text-xl font-bold text-slate-200">Kitchen Station 1</h2>
-             {/* Filter Tabs (Mock) */}
              <div className="flex gap-1 p-1 bg-slate-800 rounded-lg">
                 <button className="px-3 py-1 bg-slate-700 rounded text-xs font-bold text-white shadow-sm">ALL</button>
                 <button className="px-3 py-1 hover:bg-slate-700/50 rounded text-xs font-bold text-slate-400 transition-colors">DINE-IN</button>
@@ -456,7 +360,6 @@ export const KitchenView: React.FC = () => {
           </div>
         </header>
 
-        {/* Ticket Grid */}
         <div className="flex-1 overflow-y-auto p-6 bg-dots-pattern">
           {activeOrders.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-600">

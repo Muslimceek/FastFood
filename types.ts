@@ -30,8 +30,18 @@ export interface Product {
   badges?: string[];
 }
 
+export interface Modifier {
+  id: string;
+  name: string;
+  price: number;
+  action?: 'add' | 'remove'; // 'remove' for ingredients being taken out
+}
+
 export interface CartItem extends Product {
   quantity: number;
+  modifiers?: Modifier[];
+  comment?: string;
+  uniqueId?: string; // To distinguish the same product with different modifiers in cart
 }
 
 export interface Order {
@@ -41,9 +51,11 @@ export interface Order {
   status: OrderStatus;
   customerName: string;
   tableNumber?: string;
-  createdAt: number; // timestamp
-  completedAt?: number;
+  createdAt: string; // ISO String for consistent serialization
+  completedAt?: string;
   paymentMethod: 'CARD' | 'CASH';
+  priority?: boolean;
+  allergies?: string[];
 }
 
 export interface SalesMetric {

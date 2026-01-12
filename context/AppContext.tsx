@@ -1,16 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Order, CartItem, Product, OrderStatus, Role } from '../types';
+import { Order, CartItem, Product, OrderStatus, Role, Modifier } from '../types';
 import { MOCK_MENU } from '../constants';
+
+interface AddToCartOptions {
+  modifiers?: Modifier[];
+  comment?: string;
+  quantity?: number;
+}
 
 interface AppContextType {
   role: Role;
   setRole: (role: Role) => void;
   cart: CartItem[];
-  addToCart: (product: Product) => void;
-  removeFromCart: (productId: string) => void;
+  addToCart: (product: Product | CartItem, options?: AddToCartOptions) => void;
+  removeFromCart: (uniqueId: string) => void;
   clearCart: () => void;
   orders: Order[];
-  myOrderIds: string[]; // IDs of orders placed by this specific client session
+  myOrderIds: string[];
   placeOrder: (customerName: string, tableNumber: string) => void;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   products: Product[];
@@ -30,37 +36,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       {
         id: 'ord-8821',
         customerName: 'Дмитрий',
-        items: [{ ...MOCK_MENU[0], quantity: 1 }, { ...MOCK_MENU[4], quantity: 1 }],
+        items: [{ ...MOCK_MENU[0], quantity: 1, uniqueId: 'init-1' }, { ...MOCK_MENU[4], quantity: 1, uniqueId: 'init-2' }],
         totalAmount: 640,
         status: OrderStatus.COOKING,
-        createdAt: Date.now() - 600000, // 10 min ago
+        createdAt: new Date(Date.now() - 600000).toISOString(), // 10 min ago
         paymentMethod: 'CARD'
       },
       {
         id: 'ord-8822',
         customerName: 'Анна',
-        items: [{ ...MOCK_MENU[2], quantity: 2 }],
+        items: [{ ...MOCK_MENU[2], quantity: 2, uniqueId: 'init-3' }],
         totalAmount: 760,
         status: OrderStatus.PENDING,
-        createdAt: Date.now() - 120000, // 2 min ago
-        paymentMethod: 'CASH'
+        createdAt: new Date(Date.now() - 120000).toISOString(), // 2 min ago
+        paymentMethod: 'CASH',
+        priority: true
       }
     ];
     setOrders(initialOrders);
   }, []);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product | CartItem, options?: AddToCartOptions) => {
     setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
-      if (existing) {
-        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      // Determine modifiers and comment
+      // If 'product' is already a CartItem (from Modal), use its data, otherwise use options or defaults
+      const isCartItem = 'uniqueId' in product;
+      
+      const modifiers = isCartItem ? (product as CartItem).modifiers : (options?.modifiers || []);
+      const comment = isCartItem ? (product as CartItem).comment : (options?.comment || '');
+      const quantityToAdd = isCartItem ? (product as CartItem).quantity : (options?.quantity || 1);
+      
+      // Generate a unique signature for this configuration to allow stacking
+      // We sort modifiers by ID to ensure order doesn't affect equality
+      const modSignature = modifiers?.map(m => m.id).sort().join('|') || '';
+      const itemSignature = `${product.id}-${modSignature}-${comment}`;
+
+      const existingItemIndex = prev.findIndex(item => {
+        const itemModSig = item.modifiers?.map(m => m.id).sort().join('|') || '';
+        const currentItemSignature = `${item.id}-${itemModSig}-${item.comment || ''}`;
+        return currentItemSignature === itemSignature;
+      });
+
+      if (existingItemIndex >= 0) {
+        // Update quantity of existing item
+        const newCart = [...prev];
+        newCart[existingItemIndex].quantity += quantityToAdd;
+        return newCart;
       }
-      return [...prev, { ...product, quantity: 1 }];
+
+      // Add new item
+      const newItem: CartItem = {
+        ...product,
+        quantity: quantityToAdd,
+        modifiers: modifiers,
+        comment: comment,
+        uniqueId: `${Date.now()}-${Math.random()}` // Guaranteed unique ID for UI keys
+      };
+      
+      return [...prev, newItem];
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart(prev => prev.filter(item => item.id !== productId));
+  const removeFromCart = (uniqueId: string) => {
+    setCart(prev => prev.filter(item => item.uniqueId !== uniqueId));
   };
 
   const clearCart = () => setCart([]);
@@ -68,7 +106,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const placeOrder = (customerName: string, tableNumber: string) => {
     if (cart.length === 0) return;
 
-    const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    // Calculate total including modifier prices
+    const totalAmount = cart.reduce((sum, item) => {
+      const modsPrice = item.modifiers?.reduce((mSum, mod) => mSum + mod.price, 0) || 0;
+      return sum + ((item.price + modsPrice) * item.quantity);
+    }, 0);
+
     const newOrderId = `ord-${Math.floor(1000 + Math.random() * 9000)}`;
     
     const newOrder: Order = {
@@ -78,16 +121,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: OrderStatus.PENDING,
       customerName,
       tableNumber,
-      createdAt: Date.now(),
+      createdAt: new Date().toISOString(),
       paymentMethod: 'CARD'
     };
 
     setOrders(prev => [newOrder, ...prev]);
-    setMyOrderIds(prev => [newOrderId, ...prev]); // Track this as "my" order
+    setMyOrderIds(prev => [newOrderId, ...prev]);
     clearCart();
-    
-    // Simulate Telegram Notification
-    console.log(`🚀 TELEGRAM: Новый заказ ${newOrder.id} (${totalAmount}₽) - ${customerName}`);
   };
 
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
@@ -96,7 +136,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return {
             ...o, 
             status, 
-            completedAt: status === OrderStatus.COMPLETED ? Date.now() : o.completedAt 
+            completedAt: status === OrderStatus.COMPLETED ? new Date().toISOString() : o.completedAt 
         };
       }
       return o;
